@@ -1,24 +1,84 @@
+# Script:
 
-# SharePoint Provisioning Templates
+```
+# Import required module
+Import-Module PnP.PowerShell
 
-Repository for SharePoint PnP Provisioning templates to automate site / tenant level provisioning logic. Templates are divided on different folders based on the structure and needed permissions.
+# Retrieve variables from Automation Account
+$baseUrl = Get-AutomationVariable -Name "BaseUrl"
+$sitePrefix = Get-AutomationVariable -Name "SitePrefix"
+$testSitesNumber = Get-AutomationVariable -Name "TestSitesNumber"
+$templatePath = Get-AutomationVariable -Name "TemplatePath"
+$clientId = Get-AutomationVariable -Name "ClientId"
+$clientSecret = Get-AutomationVariable -Name "ClientSecret"
+$tenantId = Get-AutomationVariable -Name "TenantId"
+$numberOfSites = Get-AutomationVariable -Name "NumberOfSites"
 
-- Site - These templates contain site level provisioning logic. They can be provisioned and used by any site collection administrator and no tenant scoped permissions are needed.
+# Function to create and apply template to a site
+function Process-Site {
+    param (
+        [string]$siteUrl,
+        [string]$templatePath,
+        [string]$clientId,
+        [string]$clientSecret,
+        [string]$tenantId
+    )
 
-- Tenant - These templates contain tenant level provisioning. They could contain for example multiple site collections, site designs, taxonomy configurations etc. You will need to have tenant level permissions to apply these templates.
+    try {
+        # Extract the site name from the URL
+        $siteName = $siteUrl.Split("/")[-1]
+        $siteTitle = "Site for $siteName"
 
-Sub folders in specific folders are actual templates. Each template has at least one screenshot file and readme file. The readme file should follow the readme template available in the root of this repository. Each template also has a mandatory json file, which has to follow the provided json file structure. This json file information is used to surface metadata on a web site from where the templates can be used. 
+        # Log the current processing site
+        Write-Output "Processing site: $siteUrl"
 
-# Contributing
+        # Authenticate to SharePoint
+        Connect-PnPOnline -Url $baseUrl -ClientId $clientId -ClientSecret $clientSecret -Tenant $tenantId
 
-This project welcomes contributions and suggestions on service texts, but not for the templates.  Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.microsoft.com.
+        # Create the site
+        $newSite = New-PnPSite -Type CommunicationSite -Title $siteTitle -Url $siteUrl -Owner $clientId -ErrorAction Stop
+        Write-Output "Site creation response: $($newSite | ConvertTo-Json)"
 
-When you submit a pull request, a CLA-bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., label, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+        # Wait for a short period to ensure the site is fully provisioned
+        Start-Sleep -Seconds 30
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+        # Connect to the new site to apply the template
+        Connect-PnPOnline -Url $siteUrl -ClientId $clientId -ClientSecret $clientSecret -Tenant $tenantId
 
+        # Apply the site template
+        Invoke-PnPSiteTemplate -Path $templatePath -ErrorAction Stop
+        Write-Output "Successfully applied template to $siteUrl"
+    } catch {
+        Write-Output "Failed to create or apply template to site: $siteUrl. Error: $_"
+    }
+}
+```
+
+```
+# Generate site URLs dynamically for testing
+$siteUrls = 1..$testSitesNumber | ForEach-Object { "$baseUrl$sitePrefix$_" }
+
+# Loop through each site URL and process it
+foreach ($siteUrl in $siteUrls) {
+    Process-Site -siteUrl $siteUrl -templatePath $templatePath -clientId $clientId -clientSecret $clientSecret -tenantId $tenantId
+}
+```
+
+# Steps to Execute:
+
+## Upload the Script to Azure Automation:
+
+Go to your Azure Automation account.
+Create a new runbook and paste the script above.
+Save and publish the runbook.
+
+## Run the Runbook:
+
+Start the runbook and monitor its execution.
+Check the output for any errors and make sure sites are being created and templates applied correctly.
+
+## Important Notes:
+
+- Ensure that the ClientId, ClientSecret, and TenantId are correctly configured in your Azure Automation account variables.
+- The script is designed to use the minimal approach and should generate logs indicating what went wrong.
+- Adjust the number of sites to be created by modifying the TestSitesNumber variable.
